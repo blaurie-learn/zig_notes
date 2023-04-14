@@ -27,11 +27,26 @@ pub fn values() void {
     // u8 u16 u32 u64 u128 usize
     // c_short c_int c_long c_longlong
     // c_ushort c_uint c_ulong c_ulonglong
+    // integer literals have no size limitation. If UB occurs, the compiler
+    //   catches it.
+    // once  an integer is no longer known at compile time, it must have a 
+    // predefined size, and it is subject to Undefined Behavior (such as divide
+    //   by zero and integer overflow).
+    // to avoid overflow, can use alternative operators:
+    //      +% and -% perform wrapping arithmetic
+    //      +| and -| perform saturating arithmetic
     const one_plus_one: i32 = 1 + 1;
     dbgprint("1 + 1 = {}\n", .{one_plus_one});
 
     //floats
     // f16 f32 f64 f128
+    // float literals  have type comptime_float, guaranteed to have same
+    //   precision and operations of the largest float type, which is 128.
+    // float literals coerce to any floating type, or any integer type when
+    //   there is no fractional component.
+    // default float operations use strict mode, but you can switch to 
+    //   optimized mode on a per-block basis
+    @setFloatMode(.Optimized);
     const seven_div_three: f32 = 7.0 / 3.0;
     dbgprint("7.0 / 3.0 = {}\n", .{seven_div_three});
 
@@ -131,7 +146,7 @@ pub fn strings() void {
 
 
 
-pub fn variables() void {
+pub fn variables() anyerror!void {
     // const - once assigned, cannot change
     const y = 5678;
     //y += 1;   // illegal. will not compile
@@ -159,8 +174,73 @@ pub fn variables() void {
 
     // should probably avoid heavy use of undefined.
 
-    dbgprint("{d}, {d}, {d}", .{y, x, z});
+    dbgprint("{d}, {d}, {d}\n", .{y, x, z});
+
+    // generally preferable to use const rather than var.
+    
+    // identifiers are never allowed to shadow identifiers from an outer scope
+    // identifiers must start with an alphanumeric character or underscore
+    // identifiers must not overlap with keywords.
+    // use @"" notation to create identifiers that break zigs rules
+    // const @"identifer with spaces" = 0xff;
+
+    // container level variables have static lifetime and are order independant
+    // initialization of container level vars is implicitly comptime.
+    // if a container level var is const then its value is comtime known, 
+    // otherwise it is runtime known
+
+    //containers are any encapsulation higher than function:
+    //      structs, enums, unions, opaques, zig source files
+
+    // you can have local variables with static lifetime by using containers
+    // inside functions:
+    const S = struct {
+        var t: i32 = 1234;
+    };
+    S.t += 1;
+    dbgprint("static var in func: {d}\n", .{S.t});
+
+
+    //local vars occur in functions, comptime blocks and @cImport blocks.
+    // if the variable is const, its value will not chage, meaning it is
+    // comptime known. This also makes the variable comptime known.
+
+    // a local variable may be qualified qith comptime, causing the variable to
+    // be comptime known. All loads of this variable will then occur during
+    // semantic analysis of the program, not runtime. All variables declared
+    // in a comptime expression are implicitly comptime.
+    comptime var ct: i32 = 1;
+
+    ct += 1;
+    
+    const expect = std.testing.expect;
+    try expect(ct == 2);
+
+    if (ct != 2) {
+        //this compile error never trigger because y is comptime.
+        // so y != 2 is statically evaluated, and y is 2.
+        @compileError("wrong y value");
+    }
 }
+
+// a variable can be specified to be threadlocal using the threadlocal keyword
+
+threadlocal var tlv: i32 = 1234;
+test "thread local storage" {
+    const thread1 = try std.Thread.spawn(.{}, testTls, .{});
+    const thread2 = try std.Thread.spawn(.{}, testTls, .{});
+    testTls();
+    thread1.join();
+    thread2.join();
+}
+fn testTls() void {
+    assert(tlv == 1234);
+    tlv += 1;
+    assert(tlv == 1235);
+}
+
+
+
 
 
 // code written within one or more "test" declarations can be use to ensure
@@ -194,6 +274,47 @@ test "expect add_one add one to 41" {
 
 
 
+//operators
+// zig does not allow operator overloading
+pub fn operators() void {
+    // has all the standard operators and bitshift operators
+    // can suffix operators with % for wrapping +% *% -%
+    // can suffix operators with | for saturating +| *| -|
+
+    // a >>= b bitshift right, but b must be comptime known.
+    // ~a bitwise not
+
+    // a orelse b - is a is null, returns b, otherwise the unwrapped a.
+    // a.? - equivalent to a orelse unreachable
+    // a catch b - if a is an error, return b, otherwise the unwrapped a.
+    // a catch |err| b
+    // a and b - short circuiting and
+    // a or b  - short circuiting or
+    // a ++ b  - Array concatenation (only when a and b are comptime known)
+    // a ** b  - array multiplication (only when a and b are comptime known)
+    // a.* - pointer dereference
+    //      const x: u32 = 1234;
+    //      const ptr = &x;
+    //      ptr.* == 1234;          (true)
+    //
+    // a || b  - merging error sets
+}
+
+
+
+
+
+
+pub fn arrays() void {
+
+}
+
+
+
+
+
+
+
 
 
 
@@ -215,7 +336,8 @@ pub fn main() !void {
 
     values();
     strings();
-    variables();
+    try variables();
+    try variables();
 }
 
 test "simple test" {
