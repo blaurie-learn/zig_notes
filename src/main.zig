@@ -1,4 +1,5 @@
 const std = @import("std");
+const expect = std.testing.expect;
 
 // Amalgamation notes from:
 // https://ziglang.org/documentation/0.10.1
@@ -29,7 +30,7 @@ pub fn values() void {
     // c_ushort c_uint c_ulong c_ulonglong
     // integer literals have no size limitation. If UB occurs, the compiler
     //   catches it.
-    // once  an integer is no longer known at compile time, it must have a 
+    // once  an integer is no longer known at compile time, it must have a
     // predefined size, and it is subject to Undefined Behavior (such as divide
     //   by zero and integer overflow).
     // to avoid overflow, can use alternative operators:
@@ -44,7 +45,7 @@ pub fn values() void {
     //   precision and operations of the largest float type, which is 128.
     // float literals coerce to any floating type, or any integer type when
     //   there is no fractional component.
-    // default float operations use strict mode, but you can switch to 
+    // default float operations use strict mode, but you can switch to
     //   optimized mode on a per-block basis
     @setFloatMode(.Optimized);
     const seven_div_three: f32 = 7.0 / 3.0;
@@ -114,37 +115,35 @@ pub fn values() void {
     // undefined - used to leave a value unspecified
 }
 
-const mem = @import("std").mem; 
+const mem = @import("std").mem;
 pub fn strings() void {
     dbgprint("{s}", .{"\n\n----- Strings ------\n"});
     const bytes = "hello";
-    dbgprint("{}\n", .{@TypeOf(bytes)});                    // *const [5:0]u8
-    dbgprint("{d}\n", .{bytes.len});                        // 5
-    dbgprint("{c}\n", .{bytes[1]});                         // 'e'
-    dbgprint("{d}\n", .{bytes[5]});                         // 0
-    dbgprint("{}\n", .{'e' == '\x65'});                     // true
-    dbgprint("{d}\n", .{'\u{1f4a9}'});                      // 128169
-    dbgprint("{d}\n", .{'💯'});                             // 128175
-    dbgprint("{}\n", .{mem.eql(u8, "hello", "h\x65llo")});  // true
+    dbgprint("{}\n", .{@TypeOf(bytes)}); // *const [5:0]u8
+    dbgprint("{d}\n", .{bytes.len}); // 5
+    dbgprint("{c}\n", .{bytes[1]}); // 'e'
+    dbgprint("{d}\n", .{bytes[5]}); // 0
+    dbgprint("{}\n", .{'e' == '\x65'}); // true
+    dbgprint("{d}\n", .{'\u{1f4a9}'}); // 128169
+    dbgprint("{d}\n", .{'💯'}); // 128175
+    dbgprint("{}\n", .{mem.eql(u8, "hello", "h\x65llo")}); // true
     dbgprint("0x{x}\n", .{"\xff"[0]}); // non-UTF-8 strings are possible with \xNN notation
     dbgprint("{u}\n", .{'⚡'});
 
     //multiline string literals use \\ token at the start of each line
-    const hello_world_in_c = 
+    const hello_world_in_c =
         \\#include <stdio.h>
         \\
         \\int main(int argc, char **argv) {
         \\  printf("hello world\n");
         \\  return 0;
         \\}\n
-        ;
+    ;
     dbgprint("{s}", .{hello_world_in_c});
-    //you could additionally make use of @embedFile, which would read the 
+    //you could additionally make use of @embedFile, which would read the
     //contents of a file into a variable at compile time.
 
 }
-
-
 
 pub fn variables() anyerror!void {
     // const - once assigned, cannot change
@@ -152,7 +151,7 @@ pub fn variables() anyerror!void {
     //y += 1;   // illegal. will not compile
     //const applies to all of the bytes that an identifier immediately addresses.
     //pointers have their own const-ness
-    
+
     //mutable variables can be declared with var
     var x: i32 = 8765;
     x += 1;
@@ -165,7 +164,7 @@ pub fn variables() anyerror!void {
     // undefined can be coerced in to any type, and once a variable is set to
     // it, it is no longer possible to detect.
     // This means the value of the variable could be anything, even nonsense.
-    // undefined is "not a meaningful value. Use without a later assignment 
+    // undefined is "not a meaningful value. Use without a later assignment
     // would be a bug."
 
     // In debug builds, zig write 0xaa bytes to undefine memory. This is to
@@ -174,10 +173,10 @@ pub fn variables() anyerror!void {
 
     // should probably avoid heavy use of undefined.
 
-    dbgprint("{d}, {d}, {d}\n", .{y, x, z});
+    dbgprint("{d}, {d}, {d}\n", .{ y, x, z });
 
     // generally preferable to use const rather than var.
-    
+
     // identifiers are never allowed to shadow identifiers from an outer scope
     // identifiers must start with an alphanumeric character or underscore
     // identifiers must not overlap with keywords.
@@ -186,7 +185,7 @@ pub fn variables() anyerror!void {
 
     // container level variables have static lifetime and are order independant
     // initialization of container level vars is implicitly comptime.
-    // if a container level var is const then its value is comtime known, 
+    // if a container level var is const then its value is comtime known,
     // otherwise it is runtime known
 
     //containers are any encapsulation higher than function:
@@ -200,7 +199,6 @@ pub fn variables() anyerror!void {
     S.t += 1;
     dbgprint("static var in func: {d}\n", .{S.t});
 
-
     //local vars occur in functions, comptime blocks and @cImport blocks.
     // if the variable is const, its value will not chage, meaning it is
     // comptime known. This also makes the variable comptime known.
@@ -212,8 +210,7 @@ pub fn variables() anyerror!void {
     comptime var ct: i32 = 1;
 
     ct += 1;
-    
-    const expect = std.testing.expect;
+
     try expect(ct == 2);
 
     if (ct != 2) {
@@ -239,17 +236,12 @@ fn testTls() void {
     assert(tlv == 1235);
 }
 
-
-
-
-
 // code written within one or more "test" declarations can be use to ensure
 // behavior meets expectations
 
 fn add_one(number: i32) i32 {
     return number + 1;
 }
-
 
 // test declarations contain the keyword "test" followed by an optional name,
 // followed by a body that contains any zig code valid in a function.
@@ -270,9 +262,6 @@ test "expect add_one add one to 41" {
     //use "zig test" in the command line to run the test runner, which will
     //execute all tests and return a report.
 }
-
-
-
 
 //operators
 // zig does not allow operator overloading
@@ -300,24 +289,143 @@ pub fn operators() void {
     // a || b  - merging error sets
 }
 
+// ARRAYS ----------------------------------------------
 
+//array literal
+const message = [_]u8{ 'h', 'e', 'l', 'l', 'o' };
 
-
-
-
-pub fn arrays() void {
-
+//get the message
+comptime {
+    assert(message.len == 5);
 }
 
+//a string literal is a single item pointer to an array literal
+const same_message = "hello";
 
+comptime {
+    assert(mem.eql(u8, &message, same_message));
+}
 
+test "iterate over an array" {
+    var sum: usize = 0;
+    for (message) |byte| {
+        sum += byte;
+    }
+    try expect(sum == 'h' + 'e' + 'l' + 'l' + 'o');
+}
 
+//modifieable array
+var some_integers: [100]i32 = undefined;
 
+test "modify an array" {
+    for (some_integers) |*item, i| {
+        item.* = @intCast(i32, i);
+    }
+    try expect(some_integers[10] == 10);
+    try expect(some_integers[99] == 99);
+}
 
+//array concatenation if the values are known at compile time
+const part_one = [_]i32{ 1, 2, 3, 4 };
+const part_two = [_]i32{ 5, 6, 7, 8 };
+const all_of_it = part_one ++ part_two;
+comptime {
+    assert(mem.eql(i32, &all_of_it, &[_]i32{ 1, 2, 3, 4, 5, 6, 7, 8 }));
+}
 
+//string literal comptime concatenation (they're arrays!)
+const hello = "hello";
+const world = "world";
+const hello_world = hello ++ " " ++ world;
+comptime {
+    assert(mem.eql(u8, hello_world, "hello world"));
+}
 
+//** doesrepeating patters:
+const pattern = "ab" ** 3;
+comptime {
+    assert(mem.eql(u8, pattern, "ababab"));
+}
 
+//initialize an array of 10 elements to 0
+const all_zero = [_]u16{0} ** 10;
+comptime {
+    assert(all_zero.len == 10);
+    assert(all_zero[5] == 0);
+}
 
+//use compile-time code to initialize an array
+var fancy_array = init: {
+    var initial_value: [10]Point = undefined;
+    for (initial_value) |*pt, i| {
+        pt.* = Point{
+            .x = @intCast(i32, i),
+            .y = @intCast(i32, i) * 2,
+        };
+    }
+    break :init initial_value;
+};
+const Point = struct {
+    x: i32,
+    y: i32,
+};
+
+test "compile time array init" {
+    try expect(fancy_array[4].x == 4);
+    try expect(fancy_array[4].y == 8);
+}
+
+//call a function to initialize an array
+var more_points = [_]Point{makePoint(3)} ** 10;
+fn makePoint(x: i32) Point {
+    return Point{
+        .x = x,
+        .y = x * 2,
+    };
+}
+test "array init with function calls" {
+    try expect(more_points[4].x == 3);
+    try expect(more_points[4].y == 6);
+    try expect(more_points.len == 10);
+}
+
+//if theres no type in the result location then an anonymous list literal
+//turns into a struct with numbered field names
+
+test "fully anonymous list literal" {
+    try dump(.{ @as(u32, 1234), @as(f64, 12.34), true, "hi" });
+}
+
+fn dump(args: anytype) !void {
+    try expect(args.@"0" == 1234);
+    try expect(args.@"1" == 12.34);
+    try expect(args.@"2");
+    try expect(args.@"3"[0] == 'h');
+    try expect(args.@"3"[1] == 'i');
+}
+
+//multi-dimensional arrays are created by nesting arrays
+const mat4x4 = [4][4]f32{
+    [_]f32{ 1.0, 0.0, 0.0, 0.0 },
+    [_]f32{ 0.0, 1.0, 0.0, 0.0 },
+    [_]f32{ 0.0, 0.0, 1.0, 0.0 },
+    [_]f32{ 0.0, 0.0, 0.0, 1.0 },
+};
+test "multidimensional array" {
+    // access the 2d array by indexing the outer array, then the inner array
+    try expect(mat4x4[1][1] == 1.0);
+
+    //iterate a 2d array
+    for (mat4x4) |row, row_index| {
+        for (row) |cell, column_index| {
+            if (row_index == column_index) {
+                try expect(cell == 1.0);
+            }
+        }
+    }
+}
+
+pub fn arrays() void {}
 
 pub fn main() !void {
     // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
