@@ -617,6 +617,38 @@ test "@ptrToInt and @intToPtr" {
     //dereferenced.
 }
 
+//volatile ---------------------------------------------------------------
+//loads and stores are assumed to not have side-effects. If it would,
+//such as Memory Mapped IO (MMIO), use volatile.
+//const mmio_ptr = @intToPtr(*volatile u8, 0x12345678);
+
+//Alignment -------------------------------------------------------------
+//each type has an alignment -- When a value of the type is loaded from or
+//stored to memory, the memory address must be divisible by this number.
+//use @alignOf to find out this value for any type
+//
+//In zig, a pointer type has an alignment value. If the value is equal to the
+//value of the underlying type, it can be omitted from the type
+
+const builtin = @import("builtin");
+
+test "variable alignment" {
+    var x: i32 = 1234;
+    const align_of_i32 = @alignOf(@TypeOf(x));
+    try expect(@TypeOf(&x) == *i32);
+    try expect(*i32 == *align(align_of_i32) i32);
+    if (builtin.target.cpu.arch == .x86_64) {
+        try expect(@typeInfo(*i32).Pointer.alignment == 4);
+    }
+
+    //you can specify alignment on variables and functions.
+    // probably not going to dive in to this much
+}
+
+//Sentinel Terminated Pointers --------------------------------------------
+//The syntax "[*:x]T" describes a pointer that has a length determined by a
+//sentinel value. This provides protection against buffer overflow and overread
+
 pub fn main() !void {
     // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
     std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
