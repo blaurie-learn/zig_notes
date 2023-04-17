@@ -425,7 +425,197 @@ test "multidimensional array" {
     }
 }
 
-pub fn arrays() void {}
+//sentinel terminated arrays
+//the syntax "[N:x]T" describes an array which has a sentinel element of value
+//x at the index corresponding to "len"
+//note that the sentinel value is not part of the length
+test "null terminated array" {
+    const array = [_:0]u8{ 1, 2, 3, 4 };
+
+    try expect(@TypeOf(array) == [4:0]u8);
+    try expect(array.len == 4);
+    try expect(array[4] == 0);
+}
+
+//Vectors ---------------------------------------------------------------
+//group of booleans, integers, floats, or pointers which are operated on in
+//parallel using SIMD instructions if possible.
+//vector types are created with the builtin function @Vector
+//
+//Vectors support the same builtin operators as their underlying base types.
+//These operations areperformed element-wise, and return a vector of the same
+//length of the input vectors
+//      Arithmetic (+ - / * @divFloor @sqrt @ceil @log etc)
+//      Bitwise Operators (>> << & | ~ etc)
+//      Comparison Operators (> < == etc)
+//
+//Prohibited to use a math operator on a misture of scalars. Zig provides
+//@splat builtin to easily convert from scalar to vectors, and supports
+//@reduce and array indexing to convert vectors to scalars.
+//Vectors also support  assignment to and from fixed-length arrays with
+//comptime known length
+//
+//for rearranging elements within and between vectors, zig provides
+// @shuffle and @select functions
+//
+//Operations on vectors shorter than the target machines native SIMD
+//size and will typically compile to single SIMD instructions, and longer than
+//the natice SIMD size will compile to multiple SIMD instructions.
+//If SIMD is not suported for the operation / target arch, the compiler will
+//default to operating on each vector element one at a time
+//Zig suport any comptime known vector length up to 2^32-1, though small powers
+//of 2 are most typical (2-64).
+const expectEqual = std.testing.expectEqual;
+
+test "basic vector usage" {
+    //Vectors have a compile time known length and base type
+    const a = @Vector(4, i32){ 1, 2, 3, 4 };
+    const b = @Vector(4, i32){ 5, 6, 7, 8 };
+
+    //math operations take place element wise
+    const c = a + b;
+
+    //Individual vector elements can be accessed using array indexing syntax
+    try expectEqual(6, c[0]);
+    try expectEqual(8, c[1]);
+    try expectEqual(10, c[2]);
+    try expectEqual(12, c[3]);
+}
+
+test "Conversion between vector, arrays, and slices" {
+    //Vectors and fixed legth arrays can be automatically assigned back and forth
+    var arr1: [4]f32 = [_]f32{ 1.1, 3.2, 4.5, 5.6 };
+    var vec: @Vector(4, f32) = arr1;
+    var arr2: [4]f32 = vec;
+    try expectEqual(arr1, arr2);
+
+    //you can also assign from a slice with compile time known length to a
+    //vectors using ".*"
+    const vec2: @Vector(2, f32) = arr1[1..3].*;
+
+    var slice: []const f32 = &arr1;
+    var offset: u32 = 1;
+    //To extract a compile time known length from a runtime known offset, first
+    //extract a new slice from the starting offset, then an array of compile
+    //known length
+    //taking 0..2 of the slice offset..end
+    const vec3: @Vector(2, f32) = slice[offset..][0..2].*;
+    try expectEqual(slice[offset], vec2[0]);
+    try expectEqual(slice[offset + 1], vec2[1]);
+    try expectEqual(vec2, vec3);
+}
+
+//Pointers --------------------------------------------------------------------
+//Zig has two kinds of pointers, signle item and many item
+//  *T - single item pointer.
+//      supports deref syntax "ptr.*"
+//  [*]T - many itme pointer to unknown number of items
+//      supports index syntax "ptr[i]"
+//      supports slice syntax "ptr[start..end]"
+//      supports pointer arithmetic "ptr + x", "ptr - x"
+//      T must have known size, which means it cannot be anyopaque or any other opaque type
+//
+//These tpyes are closely related to Arrays and Slices
+//  *[N]T = Pointer to N items, same as single item pointer to array
+//      Supports index syntax "array_ptr[i]"
+//      Supports slice syntax "array_ptr[start..end]"
+//      Supports len property "array_ptr.len"
+//  []T - is a slice (a fat pointer, which contains a pointer of type [*]T and a length)
+//      Supports index syntax "slice[i]"
+//      Supports slice syntax "slize[start..end]"
+//      Supports len property "slice.len"
+//
+// use &x to obtain a single-item pointer
+test "address of syntax" {
+    //Get the address of a variable:
+    const x: i32 = 1234;
+    const x_ptr = &x;
+
+    //dereference it:
+    try expect(x_ptr.* == 1234);
+
+    //When you get the address of a const variable, you get a const single item pointer
+    try expect(@TypeOf(x_ptr) == *const i32);
+
+    //If you want to mutate the value you need a pointer to a mutable variable
+    var y: i32 = 5678;
+    const y_ptr = &y;
+    try expect(@TypeOf(y_ptr) == *i32);
+    y_ptr.* += 1;
+    try expect(y_ptr.* == 5679);
+}
+
+test "pointer array access" {
+    //taking address of an individual element gives a single-item pointer.
+    //This doesn't support arithmetic
+    var array = [_]u8{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+    const ptr = &array[2];
+    try expect(@TypeOf(ptr) == *u8);
+
+    try expect(array[2] == 3);
+    ptr.* += 1;
+    try expect(array[2] == 4);
+}
+
+test "pointer arithmetic with many-item pointer" {
+    const array = [_]i32{ 1, 2, 3, 4 };
+    var ptr: [*]const i32 = &array;
+
+    try expect(ptr[0] == 1);
+    ptr += 1;
+    try expect(ptr[0] == 2);
+}
+
+test "Pointer arithmetic with slices" {
+    var array = [_]i32{ 1, 2, 3, 4 };
+    var length: usize = 0;
+    var slice = array[length..array.len];
+
+    try expect(slice[0] == 1);
+    try expect(slice.len == 4);
+
+    slice.ptr += 1;
+    //now the slice is in a bat state since len has no tbeen updated
+
+    try expect(slice[0] == 2);
+    try expect(slice.len == 4);
+}
+
+//In zig, prefer to work with slices since they have bounds checking and avoid
+//undefined behavior
+test "pointer slicing" {
+    var array = [_]u8{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+    const slice = array[2..4];
+    try expect(slice.len == 2);
+
+    try expect(array[3] == 4);
+    slice[1] += 1;
+    try expect(array[3] == 5);
+}
+
+test "comptime pointers" {
+    //pointers will work at comptime as long as the code does not depend
+    //on undefined memory layout
+    comptime {
+        var x: i32 = 1;
+        const ptr = &x;
+        ptr.* += 1;
+        x += 1;
+        try expect(ptr.* == 3);
+    }
+}
+
+test "@ptrToInt and @intToPtr" {
+    // convert integer address to ptr using @intToPtr, and convert pointer to
+    // integer using @ptrToInt
+    const ptr = @intToPtr(*i32, 0xdeadbee0);
+    const addr = @ptrToInt(ptr);
+    try expect(@TypeOf(addr) == usize);
+    try expect(addr == 0xdeadbee0);
+
+    //zig could also preserve this pointer in comptime and long as it is never
+    //dereferenced.
+}
 
 pub fn main() !void {
     // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
