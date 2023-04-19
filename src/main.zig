@@ -649,6 +649,83 @@ test "variable alignment" {
 //The syntax "[*:x]T" describes a pointer that has a length determined by a
 //sentinel value. This provides protection against buffer overflow and overread
 
+//Slices ---------------------------------------------------------------
+test "basic slices" {
+    var array = [_]i32{ 1, 2, 3, 4 };
+    //a slice is a pointer and a length. The difference between and array and
+    //a sliceis that the arrays length is a part of the type known at compile
+    //time. A slices length is known at runtime.
+    //Both lengths can be access with the "len" field.
+
+    var known_at_runtime_zero: usize = 0;
+    const slice = array[known_at_runtime_zero..array.len];
+    try expect(@TypeOf(slice) == []i32);
+    try expect(&slice[0] == &array[0]);
+    try expect(slice.len == array.len);
+
+    //if you slice with comptime known start andend positions, the result is
+    //a pointer to an array rather than a slice
+    const array_ptr = array[0..array.len];
+    try expect(@TypeOf(array_ptr) == *[array.len]i32);
+
+    //using the address-of operator on a slice gives a single-item pointer,
+    //while using the 'ptr' field gives a many-item pointer
+    try expect(@TypeOf(slice.ptr) == [*]i32);
+    try expect(@TypeOf(&slice[0]) == *i32);
+    try expect(@ptrToInt(&slice.ptr) == @ptrToInt(&slice[0]));
+
+    //slices have array bounds checking. if you access something out of bounds,
+    //you get a safety check failure
+    slice[10] += 1;
+
+    //note that 'slice.ptr' does not invoke safety checking, while '&slice[0]'
+    //asserts that the slice has the len >= 1;
+}
+
+const fmt = std.fmt;
+test "using slices for strings" {
+    //zig has no concept of strings. String literals are const pointers to
+    //null terminated arrays of u8, and b convention parameters that are
+    //strings are expected to be utf-8 encoded slices of u8.
+    //here we coerce *const [5:0]u8 and *const [6:0]u8 to []const u8
+    const hello1: []const u8 = "hello";
+    const world1: []const u8 = "世界";
+
+    var all_together: [100]u8 = undefined;
+    //you can use slice syntax on an array to convert an array into a slice.
+    const all_together_slice = all_together[0..];
+    //string concat example
+    const hello_world1 = try fmt.bufPrint(all_together_slice, "{s} {s}", .{ hello1, world1 });
+
+    //generally, you can use UTF-8 and not worry about whether something is
+    //a string. if you don't need to deal with individual characters, no
+    //need to decode.
+    try expect(mem.eql(u8, hello_world1, "hello 世界"));
+}
+
+test "slice pointer" {
+    var a: []u8 = undefined;
+    try expect(@TypeOf(a) == []u8);
+    var array: [10]u8 = undefined;
+    const ptr = &array;
+    try expect(@TypeOf(ptr) == *[10]u8);
+
+    //a pointer to an array can be sliced just like an array
+    var start: usize = 0;
+    var end: usize = 5;
+    const slice = ptr[start..end];
+    slice[2] = 3;
+    try expect(slice[2] == 3);
+    //the slice was mutable because we used a mutable pointer
+    try expect(@TypeOf(slice) == []u8);
+
+    //again slicing with constant indexes will produce another pointer to an array
+    const ptr2 = slice[2..3];
+    try expect(ptr2.len == 1);
+    try expect(ptr2[0] == 3);
+    try expect(@TypeOf(ptr2) == *[1]u8);
+}
+
 pub fn main() !void {
     // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
     std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
