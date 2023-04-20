@@ -726,6 +726,37 @@ test "slice pointer" {
     try expect(@TypeOf(ptr2) == *[1]u8);
 }
 
+//Sentinel terminated slices
+//The syntax [:x]T is a slice which has a runtime knownlength and also
+//guarantees a sentinel value at the element indexed by length.
+//Sentinel values are not guaranteed to not otherwise appear.
+
+test "null terminated slice" {
+    const slice: [:0]const u8 = "hello";
+
+    try expect(slice.len == 5);
+    try expect(slice[5] == 0);
+}
+
+//Sentimel terminated slices can also be created using the syntax
+//"data[start..end:x]" where data is a many-item pointer, array or slice
+
+test "null terminated slicing" {
+    var array = [_]u8{ 3, 2, 1, 0, 3, 2, 1, 0 };
+    var runtime_length: usize = 3;
+    const slice = array[0..runtime_length :0];
+
+    try expect(@TypeOf(slice) == [:0]u8);
+    try expect(slice.len == 3);
+
+    //sentinel terminated slices asserts that the element at the sentinel
+    //position of the backing data is actually the sentinel value. If this is
+    //not the case, safety-protected Undefined Behavior results.
+}
+
+//structs --------------------------------------------------------------------
+//
+
 pub fn main() !void {
     // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
     std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
