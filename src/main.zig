@@ -757,6 +757,230 @@ test "null terminated slicing" {
 //structs --------------------------------------------------------------------
 //
 
+//declaring. Zig gives no guarantee about the order or size of the struct after
+//compiling, but the fields are guranteed to be ABI aligned
+const Point2 = struct {
+    x: f32,
+    y: f32,
+};
+
+test "struct test" {
+    //declare an instance
+    const p = Point2{ .x = 0.12, .y = 0.34 };
+
+    //if you need to leave a field not filled:
+    const p2 = Point2{
+        .x = 0.12,
+        .y = undefined,
+    };
+
+    const val = p.x == p2.x;
+    try expect(val);
+}
+
+//structs can have methods.
+//struct methods are not special in any way. They just get namespaced
+const Vec3 = struct {
+    x: f32,
+    y: f32,
+    z: f32,
+
+    pub fn init(x: f32, y: f32, z: f32) Vec3 {
+        return Vec3{
+            .x = x,
+            .y = y,
+            .z = z,
+        };
+    }
+
+    pub fn dot(self: Vec3, other: Vec3) f32 {
+        return self.x * other.x + self.y * other.y + self.z * other.z;
+    }
+};
+
+test "dot product" {
+    const v1 = Vec3.init(1.0, 0.0, 0.0);
+    const v2 = Vec3.init(0.0, 1.0, 0.0);
+
+    //notice that the self parameter also fills with v1
+    try expect(v1.dot(v2) == 0.0);
+
+    //note that the above is sugar for the below syntax. The compiler
+    //simply inserts the v1 as the first parameter for you
+    try expect(Vec3.dot(v1, v2) == 0.0);
+}
+
+//structs can have declarations
+//structs can have 0 fields
+const Empty = struct {
+    pub const PI = 3.14;
+};
+test "struct namespaced variable" {
+    try expect(Empty.PI == 3.14);
+    try expect(@sizeOf(Empty) == 0);
+
+    //you cna still instantiate an empty struct
+    const does_nothing = Empty{};
+
+    _ = does_nothing;
+}
+
+//struct field order is determined by the compiler for optimal performance.
+//however, you can still calculate a struct base pointer given a field pointer
+fn setYBasedOnX(x: *f32, y: f32) void {
+    const point = @fieldParentPtr(Point2, "x", x);
+    point.y = y;
+}
+test "field parent pointer" {
+    var point = Point2{
+        .x = 0.1234,
+        .y = 0.5678,
+    };
+    setYBasedOnX(&point.x, 0.9);
+    try expect(point.y == 0.9);
+}
+
+//you can return a struct from a function. This is how generics is done!
+fn LinkedList(comptime T: type) type {
+    return struct {
+        pub const Node = struct {
+            prev: ?*Node,
+            next: ?*Node,
+            data: T,
+        };
+
+        first: ?*Node,
+        last: ?*Node,
+        len: usize,
+    };
+}
+test "Linked List" {
+    //functions called at compile time are memoized, so you can do this:
+    try expect(LinkedList(i32) == LinkedList(i32));
+
+    var list = LinkedList(i32){
+        .first = null,
+        .last = null,
+        .len = 0,
+    };
+    try expect(list.len == 0);
+
+    //Since types are first class values, you can instantiate the type by
+    //assigning it to a variable
+    const ListOfInts = LinkedList(i32);
+    try expect(ListOfInts == LinkedList(i32));
+
+    var node = ListOfInts.Node{
+        .prev = null,
+        .next = null,
+        .data = 1234,
+    };
+    var list2 = LinkedList(i32){
+        .first = &node,
+        .last = &node,
+        .len = 1,
+    };
+
+    //When using a pointer to a struct fields can be accessed directly
+    //without explicitly dereferencing the pointer.
+    try expect(list2.first.?.data == 1234);
+    //instead of
+    //try expect(list2.first.?.*.data == 1234);
+}
+
+//structs can have defautl fields values. These are executed at comptime
+const Foo = struct {
+    a: i32 = 1234,
+    b: i32,
+};
+test "default struct initialization fields" {
+    //note that because "a" has a default, it can be ignored at init time
+    const x = Foo{
+        .b = 5,
+    };
+
+    if (x.a + x.b != 1239) {
+        @compileError("It's even comptime known");
+    }
+}
+
+//If you need a struct that has an in memory layout matching the C ABI for the
+//target, then use "extern struct".
+//This should only ever be used for compatibility with the C ABI.
+
+//Maybe it needs to pass to opengl, so we need to be particular about how the
+//bytes are arranged
+// packed structs have guaranteed memory layout
+// fields remain in the order declared, least to most significant
+// zig supports arbitrary width ints but:
+//      ints fewer than 8 bits will still use one byte
+//      ints greater than 8 will use exactly their bit width
+// bool fiels use exactly 1 bit
+// an enum field uses exactly the width of its integer type
+// a packed union field uses exactly the bit with of the union field that's largest
+// non-ABI aligned fields are packed in to the smallest possible ABI aligned
+//  integers in accordance with the target endianess.
+//
+//This means that a packed struct can participate in a @bitCast or a @ptrCast
+// to reinterpret memory. This even works at comptime.
+const Point3 = packed struct {
+    x: f32,
+    y: f32,
+};
+const native_endian = @import("builtin").target.cpu.arch.endian();
+
+const Full = packed struct {
+    number: u16,
+};
+const Divided = packed struct {
+    half1: u8,
+    quarter3: u4,
+    quarter4: u4,
+};
+
+test "@bitCast between packed structs" {
+    try doTheTest();
+    comptime try doTheTest();
+}
+
+fn doTheTest() !void {
+    try expect(@sizeOf(Full) == 2);
+    try expect(@sizeOf(Divided) == 2);
+    var full = Full{ .number = 0x1234 };
+    var divided = @bitCast(Divided, full);
+    try expect(divided.half1 == 0x34);
+    try expect(divided.quarter3 == 0x2);
+    try expect(divided.quarter4 == 0x1);
+
+    var ordered = @bitCast([2]u8, full);
+    switch (native_endian) {
+        .Big => {
+            try expect(ordered[0] == 0x12);
+            try expect(ordered[1] == 0x34);
+        },
+        .Little => {
+            try expect(ordered[0] == 0x34);
+            try expect(ordered[1] == 0x12);
+        },
+    }
+}
+
+//Note that you can take the address of a field in a packed struct
+//that is not byte aligned with the ampersand "&".
+//However, note that non-byte aligned fields have special properties,
+//so they cannot be passed in placed a normal pointer is expected.
+//Pointers to non-ABI aligned fields share the same address as the other field
+//within their host integer.
+//We can use @bitOffsetOf and @offsetOf to see where the non-aligned field is
+
+//it is possible to set the alignment of struct fields
+const AlignedStruct = struct {
+    a: u32 align(2),
+    a: u32 align(64),
+};
+
+//Struct Naming ------------------------------------
+
 pub fn main() !void {
     // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
     std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
