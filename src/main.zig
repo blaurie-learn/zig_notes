@@ -981,6 +981,146 @@ const AlignedStruct = struct {
 
 //Struct Naming ------------------------------------
 
+//Since all structs in zig are anonymous, zig infers the name based on
+//a few rules
+//  -If the struct is in the initialization expression of a variable, it gets
+//   named after that variable
+//  -if the struct is in a return expression, it gets named after the function
+//   it is returning from, with the parameter values serialized
+//  -Otherwise the struct gets a name such as (anonymous struct at file.zig:7:38)
+//  -If the struct is declared inside another struct, it gets named after both
+//   the parent struct and the name inferred by the previous rules, separated
+//   by a dot.
+fn NamedList(comptime T: type) type {
+    return struct {
+        x: T,
+    };
+}
+
+//Anonymous Struct Literals -------------------------------------------------
+//Zig allows omitting the struct type of a literal. When the result is coerced
+//the struct literal will directly instantiate the result location with no
+//copy
+test "anonymous struct literal" {
+    var pt: Point = .{
+        .x = 13,
+        .y = 67,
+    };
+
+    try expect(pt.x == 13);
+    try expect(pt.y == 67);
+
+    //the struct type can be inferred. Here the result location does not include
+    //a type, so zig infers it
+    try dump_anon(.{
+        .int = @as(u32, 1234),
+        .float = @as(f64, 12.34),
+        .b = true,
+        .s = "hi",
+    });
+
+    //anonymous structs can be created without specifying field names, and are
+    //referred to as tuples.
+    //The fields are implicitly named using numbers starting from 0. Because
+    //their names are integers, the @"0" syntax must be used to access them.
+    //Names inside @"" are always recognized as identifiers
+    //Like arrays, tuples have e .len field, can be indexed and work with the
+    //++ and ** operators. They can also be iterated over with inline for
+    const tuple = .{
+        @as(u32, 1234),
+        @as(f64, 12.34),
+        true,
+        "hi",
+    };
+    inline for (tuple) |v, i| {
+        if (i != 2) continue;
+        try expect(v);
+    }
+    try expect(tuple.len == 6);
+    try expect(tuple.@"3"[0] == 'h');
+}
+
+fn dump_anon(args: anytype) !void {
+    try expect(args.int == 1234);
+    try expect(args.float == 12.34);
+    try expect(args.b);
+    try expect(args.s[0] == 'h');
+    try expect(args.s[1] == 'i');
+}
+
+//enum ------------------------------------------------------------------------
+//declare an enum
+const Type = enum {
+    ok,
+    not_ok,
+};
+
+//a specific instance of the enum
+const cc = Type.ok;
+
+//If you want access to the ordinal value of the enum, you can specify the tag type
+const Value = enum(u2) {
+    zero,
+    one,
+    two,
+};
+
+//now you can cast between u2 and Value
+//the ordinal value starts from 0, counting up each member
+test "enum" {
+    try expect(@enumToInt(Value.zero) == 0);
+    try expect(@enumToInt(Value.one) == 1);
+    try expect(@enumToInt(Value.two) == 2);
+}
+
+//you can overwrite the ordinal values
+const Value2 = enum(u32) {
+    hundred = 100,
+    thousand = 1000,
+    million = 1000000,
+};
+
+//enums can have methods, the same as structs and unions.
+//Enum methods are not special, they are only namespaced functions
+const Suit = enum {
+    clubs,
+    spades,
+    diamonds,
+    hearts,
+
+    pub fn isClubs(self: Suit) bool {
+        return self == Suit.clubs;
+    }
+};
+
+//An enum variant of different types can be switched upon
+const FooEnum = enum {
+    string,
+    number,
+    none,
+};
+test "enum variant switch" {
+    const p = FooEnum.number;
+    const what_is_it = switch (p) {
+        FooEnum.string => "this is a string",
+        FooEnum.number => "this is a number",
+        FooEnum.none => "this is a none",
+    };
+
+    try expect(mem.eql(u8, what_is_it, "this is a number"));
+}
+
+test "more enum" {
+    //@typeInfo can be used to access the integer tag type of an enum
+    try expect(@typeInfo(Value2).Enum.tag_type == u32);
+
+    //@typeInfo tells the field_count and fields names
+    try expect(@typeInfo(Value2).Enum.fields.len == 4);
+    try expect(mem.eql(u8, @typeInfo(Value2).Enum.fields[1].name, "thousand"));
+}
+
+//extern enum ----------------------------------------------------------------
+
 pub fn main() !void {
     // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
     std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
@@ -1000,6 +1140,12 @@ pub fn main() !void {
     strings();
     try variables();
     try variables();
+
+    //testing struct naming
+    const Foo1 = struct {};
+    std.debug.print("variable: {s}\n", .{@typeName(Foo1)});
+    std.debug.print("anonymous: {s}\n", .{@typeName(struct {})});
+    std.debug.print("function: {s}\n", .{@typeName(NamedList(i32))});
 }
 
 test "simple test" {
