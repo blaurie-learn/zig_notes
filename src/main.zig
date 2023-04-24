@@ -672,11 +672,11 @@ test "basic slices" {
     //while using the 'ptr' field gives a many-item pointer
     try expect(@TypeOf(slice.ptr) == [*]i32);
     try expect(@TypeOf(&slice[0]) == *i32);
-    try expect(@ptrToInt(&slice.ptr) == @ptrToInt(&slice[0]));
+    try expect(@ptrToInt(slice.ptr) == @ptrToInt(&slice[0]));
 
     //slices have array bounds checking. if you access something out of bounds,
     //you get a safety check failure
-    slice[10] += 1;
+    //slice[10] += 1;  // out of bounds access error
 
     //note that 'slice.ptr' does not invoke safety checking, while '&slice[0]'
     //asserts that the slice has the len >= 1;
@@ -1036,7 +1036,7 @@ test "anonymous struct literal" {
         if (i != 2) continue;
         try expect(v);
     }
-    try expect(tuple.len == 6);
+    try expect(tuple.len == 4);
     try expect(tuple.@"3"[0] == 'h');
 }
 
@@ -1115,11 +1115,100 @@ test "more enum" {
     try expect(@typeInfo(Value2).Enum.tag_type == u32);
 
     //@typeInfo tells the field_count and fields names
-    try expect(@typeInfo(Value2).Enum.fields.len == 4);
+    try expect(@typeInfo(Value2).Enum.fields.len == 3);
     try expect(mem.eql(u8, @typeInfo(Value2).Enum.fields[1].name, "thousand"));
 }
 
 //extern enum ----------------------------------------------------------------
+//by default, enums are not guaranteed to be compatible with C ABI.
+//for a c abi compatible enum, provide an explicit tag type to the enum
+const c_compatible = enum(c_int) { a, b, c };
+export fn c_entry(foo: c_compatible) void {
+    _ = foo;
+}
+
+//Enum literals allow specifying the name of an enum field without specifying
+//an enum type
+const Color = enum { auto, off, on };
+
+test "enum literals" {
+    const color1: Color = .auto;
+    const color2 = Color.auto;
+    try expect(color1 == color2);
+}
+
+test "switch using enum literals" {
+    const color = Color.on;
+    const result = switch (color) {
+        .auto => false,
+        .on => true,
+        .off => false,
+    };
+
+    try expect(result);
+}
+
+//Non-exhaustive enum --------------------------------------------------------
+//non-exhaustive enum can be created by adding a trailing "_" field. It must
+//specify a tag type, and cannot consume every enumeration value.
+
+//@intToEnum on a non-exhaustive enum involves safety semantics of @intCast
+//to the integer tag type, but beyond that always results in a well-defined
+//enum value.
+
+//a switch on a non-exhaistive enum can include a '_' prong as an alternative
+//to an else prong with the difference being that it makes it a compiler error
+//if all the known tag names are not handled by the switch.
+
+const Number1 = enum(u8) {
+    one,
+    two,
+    three,
+    _,
+};
+
+test "switch on non-exhaustive enum" {
+    const number = Number1.one;
+    const result = switch (number) {
+        .one => true,
+        .two, .three => false,
+        _ => false,
+    };
+    try expect(result);
+    const is_one = switch (number) {
+        .one => true,
+        else => false,
+    };
+    try expect(is_one);
+}
+
+//Union -----------------------------------------------------------------------
+//a bare union defines a set of possible types that a value can be as a list of
+//fields. Only one field can be active at a time. The in-memory representation
+//of bare unions is not guaranteed. Bare unions cannot be used to reinterpret
+//memory, for that use @ptrCast, or use an "extern union" or a "packed union"
+//which have guaranteed in-memory layout. Accessing the non-active field is
+//safety checked Undefined Behavior
+
+const Payload = union {
+    int: i64,
+    float: f64,
+    boolean: bool,
+};
+test "simple union" {
+    var payload = Payload{ .int = 1234 };
+    //payload.float = 12.34; // causes a panic
+
+    //you can activate another field by reassigning the entire union
+    payload = Payload{ .float = 12.34 };
+    try expect(payload.float == 12.34);
+}
+
+//Tagged Union ----------------------------------------------------------------
+
+//unions can be declared with an enum tag type. This turns the union in to a
+//tagged union, which makes it eligable to use with switch expressions.
+//tagged unions coerce to their tag type
 
 pub fn main() !void {
     // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
