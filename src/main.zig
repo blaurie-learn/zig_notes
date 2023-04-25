@@ -1210,6 +1210,122 @@ test "simple union" {
 //tagged union, which makes it eligable to use with switch expressions.
 //tagged unions coerce to their tag type
 
+const ComplexTagType = enum {
+    ok,
+    not_ok,
+};
+const ComplexType = union(ComplexTagType) {
+    ok: u8,
+    not_ok: void,
+};
+
+test "switch on tagged union" {
+    const c = ComplexType{ .ok = 42 };
+    try expect(@as(ComplexTagType, c) == ComplexTagType.ok);
+
+    switch (c) {
+        ComplexTagType.ok => |value| try expect(value == 42),
+        ComplexTagType.not_ok => unreachable,
+    }
+}
+
+test "get tag type" {
+    try expect(std.meta.Tag(ComplexType) == ComplexTagType);
+}
+
+test "coerce to enum" {
+    const c1 = ComplexType{ .ok = 42 };
+    const c2 = ComplexType.not_ok;
+
+    try expect(c1 == .ok);
+    try expect(c2 == .not_ok);
+}
+
+//in order to modify the payload of a tagged union in a switch expression,
+//place an * before the variable name to make it a pointer
+
+test "modify tagged union in a switch" {
+    var c = ComplexType{ .ok = 42 };
+    try expect(@as(ComplexTagType, c) == ComplexTagType.ok);
+
+    switch (c) {
+        ComplexTagType.ok => |*value| value.* += 1,
+        ComplexTagType.not_ok => unreachable,
+    }
+
+    try expect(c.ok == 43);
+}
+
+//unions can be made to infer the enum tag type. Furthermore, unions can have
+//methods just like structs and enums
+const Variant = union(enum) {
+    int: i32,
+    boolean: bool,
+
+    //void can be ommitted when inferring enum tag
+    none,
+
+    fn truthy(self: Variant) bool {
+        return switch (self) {
+            Variant.int => |x_int| x_int != 0,
+            Variant.boolean => |x_bool| x_bool,
+            Variant.none => false,
+        };
+    }
+};
+
+test "union method" {
+    var v1 = Variant{ .int = 1 };
+    var v2 = Variant{ .boolean = false };
+
+    try expect(v1.truthy());
+    try expect(!v2.truthy());
+}
+
+//@tagName can be used to return a comptime [:0]const u8 value representing a
+//field name
+test "@tagName" {
+    try expect(std.mem.eql(u8, @tagName(Variant.int), "int"));
+}
+
+//"extern union" has a memory layout guaranteed to be compatible with the
+//C ABI
+
+//a "packed union" has a well defined in-memory layout and is it eligable
+//to be in a packed struct.
+
+//Anonymous Union Literals
+// syntax can be used to initialize unions without specifying the type
+test "anonymous union literal syntax" {
+    var i: Payload = .{ .int = 42 };
+    var f = makeNumber();
+    try expect(i.int == 42);
+    try expect(f.float == 12.34);
+}
+fn makeNumber() Payload {
+    return .{ .float = 12.34 };
+}
+
+//Opaque
+//Opaque declares a new type with an unknown (but non-zero) size and alignment.
+//It can contain declarations the same as structs, unions, and enums.
+
+//This is typically used for type safety when interacting with C code that
+//does not expose struct details.
+
+const Derp = opaque {};
+const Wat = opaque {};
+
+extern fn barderp(d: *Derp) void;
+fn foowat(w: *Wat) callconv(.C) void {
+    //barderp(w); //compiler error
+    _ = w;
+}
+
+test "call foo" {
+    foowat(undefined);
+}
+
 pub fn main() !void {
     // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
     std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
@@ -1235,6 +1351,30 @@ pub fn main() !void {
     std.debug.print("variable: {s}\n", .{@typeName(Foo1)});
     std.debug.print("anonymous: {s}\n", .{@typeName(struct {})});
     std.debug.print("function: {s}\n", .{@typeName(NamedList(i32))});
+
+    //blocks are used to limit the scope of variable declarations
+    {
+        var limited: i32 = 1;
+        _ = limited;
+    }
+    //limited += 1;     //identifier doesn't exist in this scope
+
+    //blocks are expressions. When labeled, break can be used to return
+    //a value from the block
+    var outer: i32 = 123;
+    const outerplus = blk: {
+        outer += 1;
+        break :blk outer;
+    };
+    try expect(outer == 124);
+    try expect(outerplus == 124);
+
+    //identifiers are never allowed to "hide" or "shadow" other identifiers
+    //by using the same name in the same scope
+    {
+        //evenin a block
+        //var outer: i32 = 1234;        //compiler error
+    }
 }
 
 test "simple test" {
@@ -1242,4 +1382,12 @@ test "simple test" {
     defer list.deinit(); // try commenting this out and see if zig detects the memory leak!
     try list.append(42);
     try std.testing.expectEqual(@as(i32, 42), list.pop());
+}
+
+test "empty blocks" {
+    //an empty block is equivalent to void{}
+    const a = {};
+    const b = void{};
+    try expect(@TypeOf(a) == void);
+    try expect(@TypeOf(b) == void);
 }
