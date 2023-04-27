@@ -1500,3 +1500,115 @@ test "enum literals with switch" {
     };
     try expect(result);
 }
+
+// Inline Switch -----------------------
+// Switch prongs can be marked "inline" to generate the prongs body for
+// each possible value it could have
+fn isFieldOptional(comptime T: type, field_index: usize) !bool {
+    const fields = @typeInfo(T).Struct.fields;
+    return switch (field_index) {
+        //This prong is analyzed 'fields.len - 1' times with 'idx' being an
+        //unique comptime known value each time.
+        inline 0...fields.len - 1 => |idx| @typeInfo(fields[idx].field_type) == .Optional,
+        else => return error.IndexOutOfBounds,
+    };
+}
+
+const Struct1 = struct {
+    a: u32,
+    b: ?u32,
+};
+
+const expectError = std.testing.expectError;
+
+test "using @typeInfo with runtime values" {
+    var index: usize = 0;
+    try expect(!try isFieldOptional(Struct1, index));
+    index += 1;
+    try expect(try isFieldOptional(Struct1, index));
+    index += 1;
+    try expectError(error.IndexOutOfBounds, isFieldOptional(Struct1, index));
+}
+
+// Calls to `isFieldOptional` on `Struct1` get unrolled to an equivalent
+// of this function:
+fn isFieldOptionalUnrolled(field_index: usize) !bool {
+    return switch (field_index) {
+        0 => false,
+        1 => true,
+        else => return error.IndexOutOfBounds,
+    };
+}
+
+//inline else prongs can be used as a typesafe alternative to inline for loops
+
+const SliceTypeA = extern struct {
+    len: usize,
+    ptr: [*]u32,
+};
+
+const SliceTypeB = extern struct {
+    ptr: [*]SliceTypeA,
+    len: usize,
+};
+
+const AnySlice = union(enum) {
+    a: SliceTypeA,
+    b: SliceTypeB,
+    c: []const u8,
+    d: []AnySlice,
+};
+
+fn withFor(any: AnySlice) usize {
+    const Tag = @typeInfo(AnySlice).Union.tag_type.?;
+    inline for (@typeInfo(Tag).Enum.fields) |field| {
+        //with 'inline for' the function gets generated as a series of 'if'
+        //statements relying on the optimizer to convert it to a switch
+        if (field.value == @enumToInt(any)) {
+            return @field(any, field.name).len;
+        }
+    }
+    //when using 'inline for' the compiler doesnt know that every possible case
+    //has been handled requiring an explicit unreachable
+    unreachable;
+}
+
+fn withSwitch(any: AnySlice) usize {
+    return switch (any) {
+        //with 'inline else' the function is explicitly generated as the
+        //desired switch and the compiler can check that every possible case
+        //is handled.
+        inline else => |slice| slice.len,
+    };
+}
+
+test "inline for and inline else similarity" {
+    var any = AnySlice{ .c = "hello" };
+    try expect(withFor(any) == 5);
+    try expect(withSwitch(any) == 5);
+}
+
+//when using an inline prong  swtiching on an union, an additional capture
+//can be used to obtain the unions enum tag value
+const U = union(enum) {
+    a: u32,
+    b: f32,
+};
+
+fn getNum(u: U) u32 {
+    switch (u) {
+        //here 'num'  is a runtime known value that is either u.a or u.b and
+        //tag is a u's comtime known tag value
+        inline else => |num, tag| {
+            if (tag == .b) {
+                return @floatToInt(u32, num);
+            }
+            return num;
+        },
+    }
+}
+
+test "union inline switch prong tag capture" {
+    var u = U{ .b = 42 };
+    try expect(getNum(u) == 42);
+}
