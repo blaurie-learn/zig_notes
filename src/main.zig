@@ -1769,5 +1769,5 @@ fn typeNameLength(comptime T: type) usize {
 //the loop at compile time for semantics to work, for you have a benchmark
 //to prove that forcibly unrolling the loop is measurably faster
 
-// if statements -------------------------------------------------------------
+// for loop -------------------------------------------------------------
 //
