@@ -1612,3 +1612,162 @@ test "union inline switch prong tag capture" {
     var u = U{ .b = 42 };
     try expect(getNum(u) == 42);
 }
+
+// WHILE LOOP ----------------------------------------------------------------
+test "while basic" {
+    var i: usize = 0;
+    while (i < 10) {
+        i += 1;
+    }
+    try expect(i == 10);
+}
+
+test "while break" {
+    var i: usize = 0;
+    while (true) {
+        if (i == 10) {
+            break;
+        }
+        i += 1;
+    }
+    try expect(i == 10);
+}
+
+test "while continue" {
+    var i: usize = 0;
+    while (true) {
+        i += 1;
+        if (i < 10) {
+            continue;
+        }
+        break;
+    }
+    try expect(i == 10);
+}
+
+//while loops also support a continue expression.
+//the continue keyword respects the expression.
+test "while loop continue expression" {
+    var i: usize = 1;
+    var j: usize = 1;
+    while (i * j < 2000) : ({
+        i *= 2;
+        j *= 3;
+    }) {
+        const my_ij = i * j;
+        try expect(my_ij < 2000);
+    }
+}
+
+//while is an expression. 'break', like return accepts a parameter.
+//if you 'break' a while loop, the 'else' is not evaluated
+fn rangeHasNumber(begin: usize, end: usize, number: usize) bool {
+    var i = begin;
+
+    return while (i < end) : (i += 1) {
+        if (i == number) {
+            break true;
+        }
+    } else false;
+}
+
+//labeled while --------------
+
+test "nexted break" {
+    outer: while (true) {
+        while (true) {
+            break :outer;
+        }
+    }
+}
+
+test "nested Continue" {
+    var i: usize = 0;
+    outer: while (i < 10) : (i += 1) {
+        while (true) {
+            continue :outer;
+        }
+    }
+}
+
+//while with OPTIONALS --------------------------------------
+//while can take an optional as the condition and capture the payload. When
+//null is encountered, the loop exits.
+//when |x| syntax is present on a while expression, the while condition must
+//have an Optional Type.
+//The else branch is allowed on optional iteration, in this case it will be
+//executed on the first null value encountered
+test "while null capture" {
+    var sum1: u32 = 0;
+    numbers_left = 3;
+    while (eventuallyNullSequence()) |value| {
+        sum1 += value;
+    }
+    try expect(sum1 == 3);
+
+    var sum2: u32 = 0;
+    numbers_left = 3;
+    while (eventuallyNullSequence()) |value| {
+        sum2 += value;
+    } else {
+        try expect(sum2 == 3);
+    }
+}
+var numbers_left: u32 = undefined;
+fn eventuallyNullSequence() ?u32 {
+    return if (numbers_left == 0) null else blk: {
+        numbers_left -= 1;
+        break :blk numbers_left;
+    };
+}
+
+//while with error unions
+//while can take an error union as the condition and capture the payload or
+//the error code. When the condition results in an error code, the else branch
+//is evaluated and the loop is finished
+//when 'else |x|' syntax is present on a while, the while condition must
+//have an error union type
+test "while error union capture" {
+    var sum1: u32 = 0;
+    numbers_left = 3;
+    while (eventuallyErrorSequence()) |value| {
+        sum1 += value;
+    } else |err| {
+        try expect(err == error.ReachedZero);
+    }
+}
+
+fn eventuallyErrorSequence() anyerror!u32 {
+    return if (numbers_left == 0) error.ReachedZero else blk: {
+        numbers_left -= 1;
+        break :blk numbers_left;
+    };
+}
+
+//inline while
+//inline while loop will be unrolled, which allows the code to so some things
+//while only work at compile time, such as use types as first class values
+test "inline while loop" {
+    comptime var i = 0;
+    var sum: usize = 0;
+    inline while (i < 3) : (i += 1) {
+        const T = switch (i) {
+            0 => f32,
+            1 => i8,
+            2 => bool,
+            else => unreachable,
+        };
+        sum += typeNameLength(T);
+    }
+    try expect(sum == 9);
+}
+fn typeNameLength(comptime T: type) usize {
+    return @typeName(T).len;
+}
+
+//it is recommended that you use inline loops only when you need to execute
+//the loop at compile time for semantics to work, for you have a benchmark
+//to prove that forcibly unrolling the loop is measurably faster
+
+// if statements -------------------------------------------------------------
+//
