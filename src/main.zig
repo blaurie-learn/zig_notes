@@ -1770,4 +1770,118 @@ fn typeNameLength(comptime T: type) usize {
 //to prove that forcibly unrolling the loop is measurably faster
 
 // for loop -------------------------------------------------------------
-//
+
+test "for basics" {
+    const items = [_]i32{ 4, 5, 3, 4, 0 };
+    var sum: i32 = 0;
+
+    //for loops iterate over slices and arrays
+    for (items) |value| {
+        //break and continue are supported
+        if (value == 0) {
+            continue;
+        }
+        sum += value;
+    }
+    try expect(sum == 16);
+
+    //to iterate over a portion, slice
+    for (items[0..1]) |value| {
+        sum += value;
+    }
+    try expect(sum == 20);
+
+    //to access the index of the iteration, specify a second capture value
+    //this is zero-indexed
+    var sum2: i32 = 0;
+    for (items) |_, i| {
+        try expect(@TypeOf(i) == usize);
+        sum2 += @intCast(i32, i);
+    }
+    try expect(sum2 == 10);
+}
+
+test "for reference" {
+    var items = [_]i32{ 3, 4, 2 };
+
+    //iterate over the slice by reference by specifying that the capture
+    //value is a pointer
+    for (items) |*value| {
+        value.* += 1;
+    }
+
+    try expect(items[0] == 4);
+    try expect(items[1] == 5);
+    try expect(items[2] == 3);
+}
+
+test "for else" {
+    //for allows an else attached to it, the same as a while loop
+    var items = [_]?i32{ 3, 4, null, 5 };
+
+    //for loops can also be used as expressions
+    //similar to while loops, when you break from a for loop, the else is not
+    //evaluated
+    var sum: i32 = 0;
+    const result = for (items) |value| {
+        if (value != null) {
+            sum += value.?;
+        }
+    } else blk: {
+        try expect(sum == 12);
+        break :blk sum;
+    };
+    try expect(result == 12);
+}
+
+//labeled for -----------------------------------------------
+//when a for loop is labeled, it can be references from a break or continue
+//from within a nexted loop
+
+test "nested break" {
+    var count: usize = 0;
+    outer: for ([_]i32{ 1, 2, 3, 4, 5 }) |_| {
+        for ([_]i32{ 1, 2, 3, 4, 5 }) |_| {
+            count += 1;
+            break :outer;
+        }
+    }
+    try expect(count == 1);
+}
+
+test "nexted continue" {
+    var count: usize = 0;
+    outer: for ([_]i32{ 1, 2, 3, 4, 5, 6, 7, 8 }) |_| {
+        for ([_]i32{ 1, 2, 3, 4, 5 }) |_| {
+            count += 1;
+            continue :outer;
+        }
+    }
+    try expect(count == 8);
+}
+
+//inline for -----------------------------------------------------------------
+//for loops can be inlined. this causes the loop to be unrolled, which allows
+//the code to do some things which only work at compile time, such as use
+//first class values. The capture value and iterator value of inlined
+//for loops are compile time known
+
+test "inline for loop" {
+    const nums = [_]i32{ 2, 4, 6 };
+    var sum: usize = 0;
+
+    inline for (nums) |i| {
+        const T = switch (i) {
+            2 => f32,
+            4 => i8,
+            6 => bool,
+            else => unreachable,
+        };
+        sum += typeNameLength2(T);
+    }
+    try expect(sum == 9);
+}
+
+fn typeNameLength2(comptime T: type) usize {
+    return @typeName(T).len;
+}
