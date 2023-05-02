@@ -1885,3 +1885,147 @@ test "inline for loop" {
 fn typeNameLength2(comptime T: type) usize {
     return @typeName(T).len;
 }
+
+//if ---------------------------------------------------------
+//if expressions have 3 uses, corresponding to 3 types
+//  bool
+//  ?T
+//  anyerror!T
+
+test "if expression" {
+    //if is used instead of ternary
+    const a: u32 = 5;
+    const b: u32 = 4;
+    const result = if (a != b) 47 else 3089;
+    try expect(result == 47);
+}
+
+test "if boolean" {
+    //for a boolean test
+    const a: u32 = 5;
+    const b: u32 = 4;
+    if (a != b) {
+        try expect(true);
+    } else if (a == 9) {
+        unreachable;
+    } else {
+        unreachable;
+    }
+}
+
+test "if optional" {
+    //to test for null
+
+    const a: ?u32 = 0;
+    if (a) |value| {
+        try expect(value == 0);
+    } else {
+        unreachable;
+    }
+
+    const b: ?u32 = null;
+    if (b) |_| {
+        unreachable;
+    } else {
+        try expect(true);
+    }
+
+    //else is not required
+    if (a) |value| {
+        try expect(value == 0);
+    }
+
+    //to test against null only, use the binary equality
+    if (b == null) {
+        try expect(true);
+    }
+
+    //access the value by reference using a pointer capture
+    var c: ?u32 = 3;
+    if (c) |*value| {
+        value.* = 2;
+    }
+
+    if (c) |value| {
+        try expect(value == 2);
+    }
+}
+
+test "if error union" {
+    const a: anyerror!u32 = 0;
+    if (a) |value| {
+        try expect(value == 0);
+    } else |err| {
+        _ = err;
+        unreachable;
+    }
+
+    const b: anyerror!u32 = error.BadValue;
+    if (b) |value| {
+        _ = value;
+        unreachable;
+    } else |err| {
+        try expect(err == error.BadValue);
+    }
+
+    //the else and error capture is required
+    if (a) |value| {
+        try expect(value == 0);
+    } else |_| {}
+
+    //to check only the error value, use an empty block expression
+    if (b) |_| {} else |err| {
+        try expect(err == error.BadValue);
+    }
+
+    //access the value by reference using a pointer capture
+    var c: anyerror!u32 = 3;
+    if (c) |*value| {
+        value.* = 9;
+    } else |_| {
+        unreachable;
+    }
+}
+
+test "if error union with optional" {
+    //if expressions rest for error before unwrapping optionals.
+    //the |optional_value| captures type is ?u32
+
+    const a: anyerror!?u32 = 0;
+    if (a) |optional_value| {
+        try expect(optional_value.? == 0);
+    } else |err| {
+        _ = err;
+        unreachable;
+    }
+
+    const b: anyerror!?u32 = null;
+    if (b) |optional_value| {
+        try expect(optional_value == null);
+    } else |_| {
+        unreachable;
+    }
+
+    const c: anyerror!?u32 = error.BadValue;
+    if (c) |optional_value| {
+        _ = optional_value;
+        unreachable;
+    } else |err| {
+        try expect(err == error.BadValue);
+    }
+
+    var d: anyerror!?u32 = 3;
+    if (d) |*optional_value| {
+        if (optional_value.*) |*value| {
+            value.* = 9;
+        }
+    } else |_| {
+        unreachable;
+    }
+
+    if (d) |optional_value| {
+        try expect(optional_value.? == 9);
+    } else |_| {
+        unreachable;
+    }
+}
