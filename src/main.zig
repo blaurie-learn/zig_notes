@@ -2029,3 +2029,142 @@ test "if error union with optional" {
         unreachable;
     }
 }
+
+//defer ----------------------------------------------------------------------
+fn deferExample() !usize {
+    var a: usize = 1;
+
+    {
+        defer a = 2;
+        a = 1;
+    }
+    try expect(a == 2);
+
+    a = 5;
+    return a;
+}
+
+test "defer basics" {
+    try expect((try deferExample()) == 5);
+}
+
+//if multiple defer statements are specified, they will be executed in reverse
+//order that they were run
+fn deferUnwindExample() void {
+    dbgprint("\n", .{});
+
+    defer {
+        dbgprint("1 ", .{});
+    }
+    defer {
+        dbgprint("2 ", .{});
+    }
+    if (false) {
+        //defers are not run if they are never executed
+        defer {
+            dbgprint("3 ", .{});
+        }
+    }
+}
+
+test "defer unwinding" {
+    deferUnwindExample();
+}
+
+//errdefer keyword is similar to defer, but will only execute if the scope
+//returns with an error.
+//
+//This is expecially useful in allowing a function to clean up properly on
+//error, and replaces goto error handling tactics seen in C
+fn deferErrorExample(is_error: bool) !void {
+    dbgprint("\nstart of function\n", .{});
+
+    //this will always be executed on exit
+    defer {
+        dbgprint("end of the function\n", .{});
+    }
+
+    errdefer {
+        dbgprint("encountered an error\n", .{});
+    }
+
+    //inside a defer method, the return statement is not allowed. The following
+    //is not allowed
+    //defer {
+    //  return error.DeferError;
+    //}
+
+    if (is_error) {
+        return error.DeferError;
+    }
+}
+
+//the errdeferkeyword supports an alternative syntax to capture the error
+//generated in case of one error.
+//
+//This is useful when during cleanup after an error, additional message needs
+//to be printed.
+fn deferErrorCaptureExample() !void {
+    errdefer |err| {
+        std.debug.print("the error is {s}\n", .{@errorName(err)});
+    }
+
+    return error.DeferError;
+}
+
+test "errdefer unwinding" {
+    deferErrorExample(false) catch {};
+    deferErrorExample(true) catch {};
+    deferErrorCaptureExample() catch {};
+}
+
+//unreachable --------------------------------------------------
+//in debug and ReleaseSafe mode, unreachable emits a call to panic with the
+//message "reached unreachable code"
+//
+//In ReleaseSmall and ReleaseFast mode, the optimizer uses the assumption that
+//unreachable code will never be hit to perform optimizations
+
+test "basic math" {
+    const x = 1;
+    const y = 2;
+    if (x + y != 3) {
+        unreachable;
+    }
+}
+
+//noreturn -------------------------------------------------------------------'
+//noreturn is a type, and is the type of
+//  break
+//  continue
+//  return
+//  unreachable
+//  while (true) {}
+//
+//When resolving types together, such as if clauses or switch prongs,
+//the noreturn type is compatible with every other type
+fn test_noreturn(condition: bool, b: u32) void {
+    const a = if (condition) b else return;
+    _ = a;
+    @panic("do something with a");
+}
+test "noreturn" {
+    test_noreturn(false, 1);
+}
+
+//another use case for noreturn is the 'exit' function
+
+//const WINAPI: std.builtin.CallingConvention = if (builtin.cpu.arch == .i386) .Stdcall else .C;
+//extern "kernel32" fn ExitProcess(exit_code: c_uint) callconv(WINAPI) noreturn;
+
+//test "foo" {
+//    const value = bar_noreturn() catch ExitProcess(1);
+//    try expect(value == 1234);
+//}
+
+//fn bar_noreturn() anyerror!u32 {
+//    return 1234;
+//}
+
+//functions ------------------------------------------------------------------
+//
