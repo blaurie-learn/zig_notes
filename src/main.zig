@@ -2168,3 +2168,98 @@ test "noreturn" {
 
 //functions ------------------------------------------------------------------
 //
+//functions are declared like this
+fn add(a: i8, b: i8) i8 {
+    if (a == 0) {
+        return b;
+    }
+
+    return a + b;
+}
+
+//export makes a function externally visible in the generated object, and makes
+//it follow the C ABI
+export fn sub_export(a: i8, b: i8) i8 {
+    return a - b;
+}
+
+//the extern specifier is used to declare a function that will be resoleved
+//at link time, when linking statically, or at runtime when linking dynamically
+//the callconv specifier changes the calling convention of the function
+//const WINAPI: std.builtin.CallingConvention = if (native_arch == .i386) .Stdcall else .C;
+//extern "kernel32" fn ExitProcess(exit_code: u32) callconv(WINAPI) noreturn;
+//extern "c" fn atan2(a: f64, b: f64) f64;
+
+//@setCold builtin tells the optimizer that the function is rarely called
+fn abort() noreturn {
+    @setCold(true);
+    while (true) {}
+}
+
+//tnaked calling convention makes a function not have any prologue or epilogue.
+//This can be useful when integrating with assembly
+fn _start() callconv(.Naked) noreturn {
+    abort();
+}
+
+//inline calling convention forces a function to be inlined at all call sites.
+//If the function cannot be inlined, it is a compile time error
+inline fn shiftLeftOne(a: u32) u32 {
+    return a << 1;
+}
+
+//pub specifier allows the function to be visible when importing
+//another file can use @import and call sub_pub
+fn sub_pub(a: i8, b: i8) i8 {
+    return a - b;
+}
+
+//function pointers are prefixed with '*const'
+const call2_op = *const fn (a: i8, b: i8) i8;
+fn do_op(fn_call: call2_op, op1: i8, op2: i8) i8 {
+    return fn_call(op1, op2);
+}
+
+test "function" {
+    try expect(do_op(add, 5, 6) == 11);
+    try expect(do_op(sub_pub, 5, 6) == -1);
+}
+
+//function body are comptime only types
+//function pointers may be runtime known
+
+//pass by value semantics
+//primitive types are always pass by value
+//structs, unions, and arrays can sometimes be more efficiently passed by
+//reference depending on the size. When they are passed as parameters, zig
+//may choose whichever is faster between pass by reference or pass by value
+
+//The function body can ignore he differenc ebetween reference or value and
+//always treat a parameters as value. Incidentally, be careful when taking
+//the address of a parameter. it should always be treated as if the address
+//will become invalue when the function returns
+
+//for extern functions, zig follows the C ABI for passing structs and unions
+//by value.
+
+//function parameter type inference ------------------------------------------
+//declare parameters with anytype in the place of the type. In this case
+//the parameter type will be inferred when the function is called.
+//use @TypeOf and @typeInfo to get info about the inferred type
+fn addFortyTwo(x: anytype) @TypeOf(x) {
+    return x + 42;
+}
+
+test "type inference" {
+    try expect(addFortyTwo(1) == 43);
+    try expect(@TypeOf(addFortyTwo(1)) == comptime_int);
+    var y: i64 = 2;
+    try expect(addFortyTwo(y) == 44);
+    try expect(@TypeOf(addFortyTwo(y)) == i64);
+}
+
+//functions can be reflected
+test "function reflection" {
+    try expect(@typeInfo(@TypeOf(expect)).Fn.args[0].arg_type.? == bool);
+    try expect(@typeInfo(@TypeOf(expect)).Fn.is_var_args == false);
+}
