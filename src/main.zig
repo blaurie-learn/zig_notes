@@ -2263,3 +2263,137 @@ test "function reflection" {
     try expect(@typeInfo(@TypeOf(expect)).Fn.args[0].arg_type.? == bool);
     try expect(@typeInfo(@TypeOf(expect)).Fn.is_var_args == false);
 }
+
+//Errors ---------------------------------------------------------------------
+//An error set is like an enum. However, each error name accross the entire
+//compilation gets assigned an unsigned integer greater than 0. You are allowed
+//to declare the same error name more than once, and if you do, it gets
+//assigned the same integer value
+
+//You can have subsets and supersets, and coerce from a subset to a superset.
+//But you cannot coerce from a superset to a subset.
+//AllocationError is a subset because it comes second and declares and error
+//with the same name as FileOpenError (OutOfMemory)
+const FileOpenError = error{
+    AccessDenied,
+    OutOfMemory,
+    FileNotFound,
+};
+
+const AllocationError = error{
+    OutOfMemory,
+};
+
+fn force_alloc_error(err: AllocationError) FileOpenError {
+    return err;
+}
+
+test "coerce subset to superset" {
+    const err = force_alloc_error(AllocationError.OutOfMemory);
+    try std.testing.expect(err == FileOpenError.OutOfMemory);
+}
+
+//there is a shortcut for declaring an error with only one value, and then
+//getting that value
+//const err = error.FileNotFound;
+//
+//is equivalent to
+//const err = (error { FileNotFound }).FileNotFound
+
+//the global error set -------------------------------------------------------
+//"anyerror" refers to the global error set. This is the set that contains
+//all the erros fr the entire compilation unit. It is a superset of all
+//other error sets and a subset of none.
+//Any error can coerce to the global set, and you can explicitly cast an error
+//of the global error set to a non-global one (language level asserted)
+//
+//The global error set should be generally avoided because it prevents the
+//compiler from knowing what errors are possible at compile time. Knowing the
+//error at compile time is better for generated documentation and helpful
+//error messages.
+
+//Error Union Type -----------------------------------------------------------
+//An error set type and normal type can be combined with the ! binary operator
+//to form a union type.
+
+const maxInt = std.math.maxInt;
+
+//notice the return type is !u64. This means the function will return either
+//u64, or an error. We left the errorset to the left of ! empty, so it is
+//inferred.
+pub fn parseU64(buf: []const u8, radix: u8) !u64 {
+    var x: u64 = 0;
+
+    for (buf) |c| {
+        const digit = charToDigit(c);
+
+        if (digit >= radix) {
+            return error.InvalidChar;
+        }
+
+        if (@mulWithOverflow(u64, x, radix, &x)) {
+            return error.Overflow;
+        }
+
+        if (@addWithOverflow(u64, x, digit, &x)) {
+            return error.Overflow;
+        }
+    }
+
+    return x;
+}
+
+fn charToDigit(c: u8) u8 {
+    return switch (c) {
+        '0'...'9' => c - '0',
+        'A'...'Z' => c - 'A' + 10,
+        'a'...'z' => c - 'a' + 10,
+        else => maxInt(u8),
+    };
+}
+
+test "parse u64" {
+    const result = try parseU64("1234", 10);
+    try std.testing.expect(result == 1234);
+}
+
+//You can use the "catch" binary operator to provide a default value
+test "catch" {
+    const number = parseU64("1234", 10) catch 13;
+    _ = number;
+
+    //the rhs of the catch operator must match the unwrapped type, or be
+    //of the type noreturn.
+}
+
+//there is a shortcut for
+//const number = parseU64(str, 10) catch |err| return err;
+//known as the "try" expression
+fn do_try(str: []u8) !void {
+    const number = try parseU64(str, 10);
+    _ = number; //try leaves number unwrapped!
+}
+
+//if we know for certain that an expression will never error
+fn do_never_error(str: []u8) void {
+    const number = parseU64(str, 10) catch unreachable;
+    _ = number;
+    //unreachable generates a panic in debug and ReleaseSafe modes. It is
+    //Undefined Behavior in ReleaseFast mode.
+}
+
+//or say you would like to take a different action for each error. Combine
+//the if and switch blocks
+fn do_each_thing(str: []u8) void {
+    if (parseU64(str, 10)) |number| {
+        _ = number;
+    } else |err| switch (err) {
+        error.Overflow => {
+            //handle overflow
+        },
+        error.InvalidChar => unreachable,
+    }
+}
+
+//errdefer -------------------------------------------------------------------
+//
