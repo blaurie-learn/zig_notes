@@ -2396,4 +2396,144 @@ fn do_each_thing(str: []u8) void {
 }
 
 //errdefer -------------------------------------------------------------------
+//defer statements are the other component to error handling. zig provides
+//defer adn errdefer, the later which evaluates the deferred expression
+//on block exit path only if the function returned with an error
+//from the block.
+
+const FooErr = struct {
+    data: u32,
+};
+
+//fn createFooErr(param: i32) FooErr {
+//    const foo = try tryToAllocateFooErr();
 //
+//    //no foo is allocated, but we need to free it if the function fails
+//    //or return it if the function succeeds
+//    errdefer deallocateFooErr(foo);
+//
+//    const tmp_buf = allocateTmpBuffer() orelse return error.OutOfMemory;
+//    //tmp_buf is trule a temporary resource, and we for sure want to clean it
+//    //up before this block leaves scope
+//    defer deallocateTmpBuffer(tmp_buf);
+//
+//    if (param > 1337) return error.InvalidParam;
+//
+//    //here, errdefer will not run since we're rturning success from the function
+//    //but the defer will run.
+//    return foo;
+//}
+
+const Allocator = std.mem.Allocator;
+
+fn tryToAllocateFooErr(allocator: Allocator) !*FooErr {
+    return allocator.create(FooErr);
+}
+
+fn deallocateFooErr(allocator: Allocator, foo: *FooErr) void {
+    allocator.destroy(foo);
+}
+
+fn getFooErrData() !u32 {
+    return 666;
+}
+
+fn createFooErr(allocator: Allocator, param: i32) !*FooErr {
+    const foo = getFooErr: {
+        var foo = try tryToAllocateFooErr(allocator);
+        errdefer deallocateFooErr(allocator, foo);
+
+        //calls deallocateFooErr on error
+        foo.data = try getFooErrData();
+
+        break :getFooErr foo;
+
+        //the scope here will not have ended in an error, so the errdefer above
+        //will not run here
+    };
+
+    //outside of the scope of the errdefer above, so deallocateFooErr will not be
+    //called here.
+    //we have to add one here as well
+    errdefer deallocateFooErr(allocator, foo);
+    if (param > 1337) return error.InvalidParam;
+
+    return foo;
+}
+
+test "createFooErr" {
+    try std.testing.expectError(error.InvalidParam, createFooErr(std.testing.allocator, 2468));
+}
+
+const FooPtrs = struct {
+    data: *u32,
+};
+
+//That errdefer only lasts for the block is important for loops.
+fn genFooPtrs(allocator: Allocator, num: usize) ![]FooPtrs {
+    var foos = try allocator.alloc(FooPtrs, num);
+    errdefer allocator.free(foos);
+
+    for (foos) |*foo, i| {
+        foo.data = try allocator.create(u32);
+        //this errdefer does not last between iterations!!!
+        errdefer allocator.destroy(foo.data);
+
+        _ = i;
+        //the data for the first 3 foos will be leaked!
+        //if (i >= 3) return error.TooManyFoos;
+
+        foo.data.* = try getFooErrData();
+    }
+
+    return foos;
+}
+
+test "genFoos" {
+    //try std.testing.expectError(error.TooManyFoos, genFooPtrs(std.testing.allocator, 5));
+}
+
+fn genFooPtrsFixed(allocator: Allocator, num: usize) ![]FooPtrs {
+    var foos = try allocator.alloc(FooPtrs, num);
+    errdefer allocator.free(foos);
+
+    // used to track how many foos have been initialized including their
+    // data being deallocated
+    var num_allocated: usize = 0;
+    errdefer for (foos[0..num_allocated]) |foo| {
+        allocator.destroy(foo.data);
+    };
+    for (foos) |*foo, i| {
+        foo.data = try allocator.create(u32);
+        num_allocated += 1;
+
+        if (i >= 3) return error.TooManyFoos;
+
+        foo.data.* = try getFooErrData();
+    }
+
+    return foos;
+}
+
+test "genFoosFixed" {
+    try std.testing.expectError(error.TooManyFoos, genFooPtrsFixed(std.testing.allocator, 5));
+}
+
+//Compiler time reflection of the error union:
+test "error union" {
+    var foo: anyerror!i32 = undefined;
+
+    // Coerce from child type of an error union:
+    foo = 1234;
+
+    // Coerce from an error set:
+    foo = error.SomeError;
+
+    // Use compile-time reflection to access the payload type of an error union:
+    comptime try expect(@typeInfo(@TypeOf(foo)).ErrorUnion.payload == i32);
+
+    // Use compile-time reflection to access the error set type of an error union:
+    comptime try expect(@typeInfo(@TypeOf(foo)).ErrorUnion.error_set == anyerror);
+}
+
+//merging error sets
