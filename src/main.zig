@@ -2537,3 +2537,93 @@ test "error union" {
 }
 
 //merging error sets
+//use || operator to merge two error sets together
+//If they both have doc comments, then the left side comments have precedent
+
+const A = error{
+    NotDir,
+
+    /// A doc comment
+    PathNotFound,
+};
+const B = error{
+    OutOfMemory,
+
+    /// B doc comment
+    PathNotFound,
+};
+
+const C = A || B;
+
+fn fooMerge() C!void {
+    return error.NotDir;
+}
+
+test "merge error sets" {
+    if (fooMerge()) {
+        @panic("unexpected");
+    } else |err| switch (err) {
+        error.OutOfMemory => @panic("unexpected"),
+        error.PathNotFound => @panic("unexpected"),
+        error.NotDir => {},
+    }
+}
+
+//This is especially useful for functions returning different error sets
+//depending on comptime branches
+
+//inferred error sets
+//because many functions in zig return a pooible error, zig supports inferring
+//the error set. To have an inferred set, simply use the ! operator without
+//a left hadn side error type declaration
+//when a functions has an inferred error set that function becomes generic
+//and thus it becomes trickier to do certain things with is, such as obtain
+//a function pointer, or have an error set that is consistent across different
+//build targets. Inferred error sets are additionally incompatible with
+//recursion.
+
+// with an inferred error set
+pub fn add_inferred(comptime T: type, a: T, b: T) !T {
+    var answer: T = undefined;
+    return if (@addWithOverflow(T, a, b, &answer)) error.Overflow else answer;
+}
+
+//with an explicit error set
+pub fn add_explicit(comptime T: type, a: T, b: T) Error!T {
+    var answer: T = undefined;
+    return if (@addWithOverflow(T, a, b, &answer)) error.Overflow else answer;
+}
+
+const Error = error{
+    Overflow,
+};
+
+test "inferred error set" {
+    if (add_inferred(u8, 255, 1)) |_| unreachable else |err| switch (err) {
+        error.Overflow => {},
+    }
+}
+
+//Error return traces -------------------------------------------------
+//Error return traces show all the points in the code that an error was returned
+//to the calling function. This makes it practical to use "try" everywhere and
+//then still now what happened in an error ends up bubbling all the way out
+//of your applicaiton.
+//This is not a stack trace
+//Error return traces keep track of how an error started and how it ended up
+//  for example, an error further up in the trace might start with a
+//  FileNotFound, but get to your code as a PermissionError. With the ERT
+//  you can know this
+//
+//ERT is enabled in Debug and ReleaseSafe, and disabled in ReleaseFast and
+//ReleaseSmall
+//
+//  You can activate this feature by
+//  -Return an error from main
+//  -an error makes it to "catch unreachable" and you have not overridded
+//   the default panic handler
+//  -use errorReturnTrace to access the current trace. use
+//   std.debug.dumpStackTrace to print it.
+
+//Optionals ------------------------------------------------------------------
+//
