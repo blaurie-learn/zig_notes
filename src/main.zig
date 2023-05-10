@@ -2626,4 +2626,86 @@ test "inferred error set" {
 //   std.debug.dumpStackTrace to print it.
 
 //Optionals ------------------------------------------------------------------
-//
+//The ? symbolizes and optional type
+
+test "basic optional" {
+    //normal integer
+    const normal_int: i32 = 1234;
+    _ = normal_int;
+
+    //optional integer
+    const optional_int: ?i32 = 5678;
+    _ = optional_int;
+
+    //now the variable "optinal_int" could be either an i32, or "null"
+}
+
+fn optional_ptr() ?*u8 {
+    return null;
+}
+
+fn do_a_thing() ?*u8 {
+    const unwrapped = optional_ptr() orelse return null;
+
+    //here, you see that the orelse will cause the value to unwra, and if the
+    //unwrap returns null, then we would return null;
+
+    return unwrapped;
+}
+
+test "zig optional references" {
+    //zig does not have null references like C. Although an optional pointer
+    //compiles down to a regular pointer, and zig will use the value of 0 for
+    //null, zig protects you from dereferencing null, or accidentally being
+    //able to pass a null where the code says you must pass something
+
+}
+
+const OptionalFoo = struct {};
+fn doSomethingWithFoo(foo: *OptionalFoo) void {
+    _ = foo;
+}
+
+fn foAThingWithFoo(optional_foo: ?*OptionalFoo) void {
+    //do some stuff
+
+    //Here is another common pattern seen with optionals. doSomethingWithFoo
+    //requires an OptionalFoo that is not null, meaning it assumes you are
+    //passing a real value.
+    if (optional_foo) |foo| {
+        doSomethingWithFoo(foo);
+
+        //notably, inside here, foo is guaranteed to be pointing at something
+        //by the compiler.
+    }
+
+    //do some stuff
+}
+
+//one benefit to writing functions with pointers that cannot be null is that
+//this actually opens up certain optimization paths in the compiler
+
+test "optional compile time reflection" {
+    //declare an optional and coerce from null
+    var foo: ?i32 = null;
+
+    //coerce from child type of an optional
+    foo = 1234;
+
+    //compile time reflection to access the child type of the optional
+    comptime try expect(@typeInfo(@TypeOf(foo)).Optional.child == i32);
+}
+
+//null has its own type, and the only way to use null is to cast it to a
+//different type
+
+//Optional Pointers are guaranteed to be the same size as a pointer.
+//The null of the optional is guaranteed to be address 0
+
+//Casting ---------------------------------------------------------------------
+//a type cast converts a value form one type to another
+//zig has
+// -Type Coercion for conversins that are known to be safe and unambiguous
+// -Explicit casts for conversions that you wouldn't want to run by accident
+// -Peer Type Resolution for when a result type is decided by multiple operand
+// types
