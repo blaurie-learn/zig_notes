@@ -2709,3 +2709,24 @@ test "optional compile time reflection" {
 // -Explicit casts for conversions that you wouldn't want to run by accident
 // -Peer Type Resolution for when a result type is decided by multiple operand
 // types
+
+//type coercion occurs when one type expected, but another is provided.
+//type coercions are only allowed when it is completely unambigiuous how to
+//get one type from another and the transformation is guaranteed to be safe
+
+//values which have the same representation at runtime can be cast to increase
+//the strictness of the qualifiers
+//  "const"     - non const to const is allowed
+//  "volatile"  - non volatile to volatile is allowed
+//  "align"     - bigger to smaller alignment is allowed
+//  error sets to super sets is allowed
+//
+//the above casts are no-ops at runtime since the value representation
+//does not change
+//
+//in addition, pointers coerce to const optional pointers
+//
+//integers coerce to wider integers
+//floats coerce to wider floats
+
+//Cosercion of Slices, Arrays and Pointers
