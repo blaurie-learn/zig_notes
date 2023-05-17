@@ -2783,7 +2783,7 @@ test "*[N]T to [*]T" {
 
 //this works when the destination is optional
 test "*T to ?[*]T" {
-    const buf: [5]u8 = "hello".*;
+    var buf: [5]u8 = "hello".*;
     const x: ?[*]u8 = &buf;
     try expect(x.?[4] == 'o');
 }
@@ -2797,3 +2797,115 @@ test "*T to *[1]T" {
 }
 
 //Optional coercion
+//The payload type as well as null coerce to the optional type
+test "coerce to optional" {
+    const x: ?i32 = 1234;
+    const y: ?i32 = null;
+
+    try expect(x.? == 1234);
+    try expect(y == null);
+}
+
+//also works nexted in the error union type
+test "coerce optionals wrappe din error union" {
+    const x: anyerror!?i32 = 1234;
+    const y: anyerror!?i32 = null;
+
+    try expect((try x).? == 1234);
+    try expect((try y) == null);
+}
+
+//the error union type as well as the error set type coerce to the error union
+//type
+
+test "coercion to error unions" {
+    const x: anyerror!i32 = 1234;
+    const y: anyerror!i32 = error.Failure;
+
+    try expect((try x) == 1234);
+    try std.testing.expectError(error.Failure, y);
+}
+
+//when a number is comptime know to be representable in the dest type, it
+//may be coerced
+
+//tagged unions can be coerced to enums, and enums can be coerced
+//to tagged unions when they are comptime known to be a field of the union
+//that only has one possible value
+
+const E = enum { one, two, three };
+
+const UN = union(E) { one: i32, two: f32, three };
+
+test "coercion between unions and enums" {
+    var u = UN{ .two = 12.34 };
+    var e: E = u;
+    try expect(e == E.two);
+
+    const three = E.three;
+    var another_u: UN = three;
+    try expect(another_u == E.three);
+}
+
+//Explicit casts occur with builtins:
+//    @bitCast - change type but maintain bit representation
+//    @alignCast - make a pointer have more alignment
+//    @boolToInt - convert true to 1 and false to 0
+//    @enumToInt - obtain the integer tag value of an enum or tagged union
+//    @errSetCast - convert to a smaller error set
+//    @errorToInt - obtain the integer value of an error code
+//    @floatCast - convert a larger float to a smaller float
+//    @floatToInt - obtain the integer part of a float value
+//    @intCast - convert between integer types
+//    @intToEnum - obtain an enum value based on its integer tag value
+//    @intToError - obtain an error code based on its integer value
+//    @intToFloat - convert an integer to a float value
+//    @intToPtr - convert an address to a pointer
+//    @ptrCast - convert between pointer types
+//    @ptrToInt - obtain the address of a pointer
+//    @truncate - convert between integer types, chopping off bits
+
+//Zero Bit Types---------------------
+//For some types @sizeOf is 0
+//  void
+//  the Integers u0 an i0
+//  Arrays and Vectors with a len 0, or an element type that is a zero bit type
+//  an enum with only one tag
+//  a struct with all fields being zero bit types
+//  a union with only 1 field which is a zero bit type
+//
+//These types can only ever have one possible value, and thus require 0 bits
+//to represent
+
+//void --------------------------------
+
+//void can be useful for instantiating generic types. For example, a
+//Map(Key, Value) one can pass void for the value type to make it a Set
+
+test "turn hashmap to set with void" {
+    var map = std.AutoHashMap(i32, void).init(std.testing.allocator);
+    defer map.deinit();
+
+    try map.put(1, {});
+    try map.put(2, {});
+
+    try expect(map.contains(2));
+    try expect(!map.contains(3));
+
+    _ = map.remove(2);
+    try expect(!map.contains(2));
+}
+
+//usingnamespace----------------------------------
+//is a declaration that mixes the public declarations of the operand
+//which must be a struct, union, enum or opaque into the namespace
+test "using std namespace" {
+    const S = struct {
+        usingnamespace @import("std");
+    };
+
+    try S.testing.expect(true);
+}
+
+//comptime --------------------------------------------------------------------
+//
