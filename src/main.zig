@@ -2909,3 +2909,105 @@ test "using std namespace" {
 
 //comptime --------------------------------------------------------------------
 //
+//compile time parameters is how zig implements generics
+
+fn max(comptime T: type, a: T, b: T) T {
+    return if (a > b) a else b;
+}
+fn gimmeTheBiggerFloat(a: f32, b: f32) f32 {
+    return max(f32, a, b);
+}
+fn gimmeTheBiggerInteger(a: u64, b: u64) u64 {
+    return max(u64, a, b);
+}
+
+//in zig, types are first class citizens. They can be assigned to variables,
+//passed as parameters to functions, and returned from functions.
+//However, they can only be used in expressions which are known at compile
+//time, which is why the parameter T above must be marked comptime.
+
+//a comptime parameters means:
+//  at the callsite, the value must be known at compile time, or it is a compiler error
+//  in the function definition, the value is known at compile time
+fn comptime_foo(condition: bool) void {
+    const result = max(if (condition) f32 else u64, 1234, 5678);
+    _ = result;
+}
+
+test "try to pass a runtime type" {
+    //comptime_foo(false);
+    //uncomment above for a compiler error
+    //the compiler will also error if you try to cause behavior that a type
+    //doesn't support, for example
+    //max(bool, true, false);
+}
+
+//because the types are first class, we can have a max that supports bool
+//easily enough
+fn maxWithBool(comptime T: type, a: T, b: T) T {
+    if (T == bool) {
+        return a or b;
+    } else if (a > b) {
+        return a;
+    } else {
+        return b;
+    }
+}
+
+//this works because zig implicitly inlines if expressions if the condition
+//is known at compile time and the compiler guarantees that it will skip
+//analysis of the branch not taken
+//switch is also treated this way.
+
+//the programmer can label variables as comptime. This guarantees to the
+//compiler that every load and store of the variable is performed at compile
+//time. any violation is a compile time error.
+//This and inline loops can combine to allow us to write functions that are
+//partially evaluated at compile time and partially at runtime
+
+const CmdFn = struct {
+    name: []const u8,
+    func: fn (i32) i32,
+};
+
+const cmd_fns = [_]CmdFn{
+    CmdFn{ .name = "one", .func = one },
+    CmdFn{ .name = "two", .func = two },
+    CmdFn{ .name = "three", .func = thre },
+};
+fn one(value: i32) i32 {
+    return value + 1;
+}
+fn two(value: i32) i32 {
+    return value + 2;
+}
+fn thre(value: i32) i32 {
+    return value + 3;
+}
+
+fn performFn(comptime prefix_char: u8, start_value: i32) i32 {
+    var result: i32 = start_value;
+    comptime var i = 0;
+    inline while (i < cmd_fns.len) : (i += 1) {
+        if (cmd_fns[i].name[0] == prefix_char) {
+            result = cmd_fns[i].func(result);
+        }
+    }
+
+    return result;
+}
+
+test "perform fn" {
+    try expect(performFn('t', 1) == 6);
+    try expect(performFn('o', 0) == 1);
+    try expect(performFn('w', 99) == 99);
+}
+
+//in the example above, performFn is generated 3 different times for the
+//different values of prefix_char provided.
+//
+//it's important to realize that this is not a way to write more optimized
+//code. It is a way to ensure that things that should happen at compile time
+//do happen at compile time.
+
+//compile time expressions---------------------------------------------------
