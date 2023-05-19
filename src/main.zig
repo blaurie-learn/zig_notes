@@ -3011,3 +3011,43 @@ test "perform fn" {
 //do happen at compile time.
 
 //compile time expressions---------------------------------------------------
+
+//in zig, it matters whether a given expression is known at compile or runtime.
+//a programmer can use comptime expressions toguarantee that the expression
+//will be evaluated at compile time. If an expression cannot be evaluated at
+//compile this, this process will emit an error.
+
+//within a comptime expression block
+//  all variables are comptime variables
+//  all if, while, for and switch expressions are evaluated at comptime if possible
+//  all function calls cause the compiler to interpret the function at comptime if possible
+//
+//these rules mean that a function can conceivably be called at both comptime
+//and runtime
+
+fn fibonacci(index: u32) u32 {
+    if (index < 2) return index;
+    return fibonacci(index - 1) + fibonacci(index - 2);
+}
+
+test "fibonacci" {
+    //at runtime
+    try expect(fibonacci(7) == 13);
+
+    //test fibonacci at compile time
+    comptime {
+        try expect(fibonacci(7) == 13);
+    }
+}
+
+//if we were to forget the base case with an integer for fibonacci, that would
+//be an infinite loop. For comptime, you can be only 1000 brances deep before
+//the compiler stops. You can use @setEvalBranchQuota to change the default
+//number of 1000 to something else
+
+//at the container level (the level outside of any functions), all expressions
+//are implicitly comptime expressions. This means that complex static
+//data can be initialized with functions.
+
+//Generic Data Structures ----------------------------------------------------
+//
