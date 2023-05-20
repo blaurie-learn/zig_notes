@@ -3050,4 +3050,48 @@ test "fibonacci" {
 //data can be initialized with functions.
 
 //Generic Data Structures ----------------------------------------------------
-//
+//Zig uses comptime to implement generic data strcutures
+//here is a sample of a list
+
+fn List(comptime T: type) type {
+    return struct {
+        items: []T,
+        len: usize,
+    };
+}
+
+//The generic list structure can be instantiated by passing in a type
+var list_buffer: [10]i32 = undefined;
+var lst = List(i32){
+    .items = &list_buffer,
+    .len = 0,
+};
+
+//And that's it. the function list_buffer returns an anonymous sruct.
+
+//async functions -------------------------------------------------------------
+//zig infers that a function is async when it observes that the function
+//contains a suspension point. async functions can be called the same as
+//normal functions. A functions call of an async function is a suspention
+//point.
+
+//at any point a function may suspend itself. This causes control to return
+//to the callsite (in the case of the first suspension) or resumed (in the
+//case of subsequent suspension)
+
+//TODO: once async is in the compiler I am using, async
+
+//var async_x: i32 = 1;
+
+//test "suspend with no resume" {
+//    var frame = async async_func();
+//    try expect(async_x == 2);
+//    _ = frame;
+//}
+
+//fn async_func() void {
+//    async_x += 1;
+//    suspend {}
+//    //this line is never reached becaue suspend has no matching resume
+//    async_x += 1;
+//}
